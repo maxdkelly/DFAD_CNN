@@ -1,34 +1,70 @@
-# TensorFlow and tf.keras
+import matplotlib.pylab as plt
 import tensorflow as tf
-from tensorflow import keras
-from keras.applications.vgg16 import VGG16
-from keras.models import Model
-from keras.layers import Dense
-from keras.layers import Flatten
-
+import tensorflow_hub as hub
+from tensorflow.keras import layers
 # Helper libraries
 import numpy as np
 import matplotlib.pyplot as plt
+import pathlib
+from collectBatchStats import CollectBatchStats
 
-# load model without classifier layers
-model = VGG16(include_top=False, input_shape=(300, 300, 3))
-# mark loaded layers as not trainable
-for layer in model.layers:
-	layer.trainable = False
-# add new classifier layers
-flat1 = Flatten()(model.outputs)
-class1 = Dense(1024, activation='relu')(flat1)
-output = Dense(3, activation='softmax')(class1)
-# define new model
-model = Model(inputs=model.inputs, outputs=output)
-# summarize
+data_dir = "bark_dataset"
+data_dir = pathlib.Path(data_dir)
+
+image_count = len(list(data_dir.glob('*/*.jpg')))
+
+CLASS_NAMES = np.array([item.name for item in data_dir.glob('*') if item.name != "LICENSE.txt"])
+
+# The 1./255 is to convert from uint8 to float32 in range [0,1].
+image_generator = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
+
+BATCH_SIZE = 32
+IMG_HEIGHT = 224
+IMG_WIDTH = 224
+STEPS_PER_EPOCH = np.ceil(image_count/BATCH_SIZE)
+
+feature_extractor_url = "https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2"
+
+image_data = image_generator.flow_from_directory(directory=str(data_dir),
+                                                     batch_size=BATCH_SIZE,
+                                                     shuffle=True,
+                                                     target_size=(IMG_HEIGHT, IMG_WIDTH),
+                                                     classes = list(CLASS_NAMES))
+
+
+for image_batch, label_batch in image_data:
+    print("Image batch shape: ", image_batch.shape)
+    print("Label batch shape: ", label_batch.shape)
+    break
+
+feature_extractor_layer = hub.KerasLayer(feature_extractor_url,
+                                         input_shape=(224,224,3))
+
+feature_extractor_layer.trainable = False
+
+model = tf.keras.Sequential([
+    feature_extractor_layer,
+    layers.Dense(image_data.num_classes)
+])
+
 model.summary()
 
-fashion_mnist = keras.datasets.fashion_mnist
-(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+model.compile(
+  optimizer=tf.keras.optimizers.Adam(),
+  loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True),
+  metrics=['acc'])
 
-#plt.figure()
-#plt.imshow(train_images[0])
-#plt.colorbar()
-#plt.grid(False)
-#plt.show()
+steps_per_epoch = np.ceil(image_data.samples/image_data.batch_size)
+
+batch_stats_callback = CollectBatchStats()
+
+history = model.fit_generator(image_data, epochs=5,
+                              steps_per_epoch=steps_per_epoch,
+                              callbacks = [batch_stats_callback])
+
+plt.figure()
+plt.ylabel("Accuracy")
+plt.xlabel("Training Steps")
+plt.ylim([0,1])
+plt.plot(batch_stats_callback.batch_acc)
+plt.show()
