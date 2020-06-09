@@ -1,6 +1,7 @@
 import time
 import subprocess
 import shutil
+import msvcrt
 from os import listdir
 from os.path import isfile, join
 
@@ -15,10 +16,11 @@ only_files = [f for f in listdir(unclass_path) if isfile(join(unclass_path, f))]
 
 for file in only_files:
 
-    cmd = 'ImageViewer ' + unclass_path + file
-    print(cmd)
+    cmd = 'ImageViewer -o on ' + unclass_path + file
     p = subprocess.Popen(cmd)
-    x = input("Enter classification [L, M, H]")
+    print("Enter classification [L, M, H]")
+    x = str(msvcrt.getch(),'utf-8')
+    print(x)
     p.kill()
 
     if x.upper() == 'L':
@@ -30,6 +32,8 @@ for file in only_files:
     elif x.upper() == 'H':
         print("moving to high_fuel_load")
         shutil.move(unclass_path + file,high_path + file)
+    elif x.upper() == 'E':
+        break
     
    
     
